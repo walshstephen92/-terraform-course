@@ -147,9 +147,35 @@ data "aws_ami" "ubuntu" {
 }
 
 resource "aws_instance" "web_server" {
-  ami           = data.aws_ami.ubuntu.id
-  instance_type = "t2.micro"
-  subnet_id     = aws_subnet.public_subnets["public_subnet_1"].id
+  ami                         = data.aws_ami.ubuntu.id
+  instance_type               = "t2.micro"
+  subnet_id                   = aws_subnet.public_subnets["public_subnet_1"].id
+  associate_public_ip_address = true
+  key_name                    = aws_key_pair.generated.key_name
+
+  connection {
+    user        = "ubuntu"
+    private_key = tls_private_key.generated.private_key_pem
+    host        = self.public_ip
+  }
+
+  security_groups = [
+    aws_security_group.ingress-ssh.id,
+    aws_security_group.vpc-web.id
+  ]
+
+  provisioner "local-exec" {
+    command = "chmod 600 ${local_file.private_key_pem.filename}"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "sudo rm -rf /tmp",
+      "sudo git clone https://github.com/hashicorp/demo-terraform-101 /tmp",
+      "sudo sh /tmp/assets/setup-web.sh"
+    ]
+  }
+
   tags = {
     Name  = local.server_name
     Owner = local.team
@@ -174,6 +200,45 @@ resource "tls_private_key" "generated" {
 }
 
 resource "local_file" "private_key_pem" {
-  content = tls_private_key.generated.private_key_pem
+  content  = tls_private_key.generated.private_key_pem
   filename = "MyAWSKey.pem"
+}
+
+resource "aws_key_pair" "generated" {
+  key_name   = "MyAWSKey"
+  public_key = tls_private_key.generated.public_key_openssh
+}
+
+resource "aws_security_group" "ingress-ssh" {
+  name   = "allow-all-ssh"
+  vpc_id = aws_vpc.vpc.id
+
+  ingress {
+    cidr_blocks = ["0.0.0.0/0"]
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+  }
+}
+
+resource "aws_security_group" "vpc-web" {
+  name        = "vpc-web-${terraform.workspace}"
+  vpc_id      = aws_vpc.vpc.id
+  description = "Web traffic"
+
+  ingress {
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow port 80 traffic from everywhere"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+  }
+
+  ingress {
+    cidr_blocks = ["0.0.0.0/0"]
+    description = "Allow port 443 traffic from everywhere"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+  }
 }
