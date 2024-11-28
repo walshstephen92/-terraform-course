@@ -246,6 +246,7 @@ resource "aws_security_group" "vpc-web" {
 module "server" {
   source          = "./modules/server"
   ami             = data.aws_ami.ubuntu.id
+  size            = "t3.micro"
   subnet_id       = aws_subnet.public_subnets["public_subnet_3"].id
   security_groups = [aws_security_group.vpc-web.id, aws_security_group.ingress-ssh.id]
 }
